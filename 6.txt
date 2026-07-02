@@ -1,0 +1,312 @@
+Program 6
+Run the PHP Code on EC2 instance that retrieve data from RDS Server.
+
+Specify the VPC, subnets, and security groups when you create the DB instance. You also specify them when you create the EC2 instance to host your web server. The VPC, subnets, and security groups are required for the DB instance and the web server to communicate.
+
+Fig 8: Connectivity between EC2 instance and RDS server
+
+Step 1: Create a Custom VPC
+Log in to the AWS Management Console.
+Search for and select VPC.
+Click on Your VPCs on the left menu, then click Create VPC.
+Select VPC only.
+Set a Name tag (e.g., Lab-VPC) and specify an IPv4 CIDR block (e.g., 10.0.0.0/16).
+Leave everything else as default and click Create VPC.
+Click on Your VPCs on the left-side menu.
+
+• Select your custom VPC checkbox: prg6.
+
+• Click the Actions dropdown button at the top right, then select Edit VPC settings.
+
+• Under the DNS settings section, make sure both of these boxes are checked:
+
+• Enable DNS resolution
+
+• Enable DNS hostnames (This is the one causing the error!)
+
+• Scroll to the bottom and click Save changes.
+
+Step 2: Create Subnets (Public & Private)
+
+You need at least two subnets in the same Availability Zone (or across two for RDS requirements).
+
+On the left menu, click Subnets -->Create subnet.
+Select your newly created Lab-VPC.
+Configure Public Subnet:
+
+• Subnet name: Public-Subnet
+
+• Availability Zone: ap-south-1a
+
+• IPv4 CIDR block: 10.0.1.0/24
+
+Configure Private Subnet:
+
+• Click Add new subnet.
+
+• Subnet name: Private-Subnet
+
+• Availability Zone: ap-south-1b
+
+• IPv4 CIDR block: 10.0.2.0/24
+
+Click Create subnet.
+Step 3: Create and Attach the Internet Gateway (IGW)
+On the left menu, click Internet Gateways --> Create internet gateway.
+Name it (e.g., Lab-IGW) and click Create internet gateway.
+Once created, click Actions --> Attach to VPC.
+Select your Lab-VPC from the list and click Attach internet gateway.
+Step 4: Configure Route Tables
+On the left menu, click Route Tables.
+Select the route table associated with your Lab-VPC (or create a new one named Public-RT).
+Click on the Routes tab at the bottom -->Edit routes.
+Click Add route:
+
+• Destination: 0.0.0.0/0 (Allows traffic from anywhere)
+
+• Target: Select Internet Gateway, then click your Lab-IGW.
+
+Click Save changes.
+Switch to the Subnet associations tab -->Click Edit subnet associations.
+Check the box for your Public-Subnet and click Save associations.
+Phase 2: Creating the Amazon RDS MySQL Database
+Step 1: Initialize Database Creation
+Search for and select RDS in the AWS console top bar.
+On the left dashboard menu, click Databases -->Create database.
+Step 2: Configure Database Engine & Settings
+Database creation method: Choose Standard create.
+Engine options: Select MySQL.
+Edition: Choose MySQL Community.
+Engine version: Select 8.0.32 (as specified in your manual).
+Templates: Select Free Tier to keep resources within the complimentary tier.
+Settings:
+
+• DB instance identifier: Enter a name (e.g., rds-db-instance).
+
+• Master username: Enter a username (e.g., admin).
+
+• Master password / Confirm password: Type a secure password (write this down!).
+
+Step 3: Connectivity & Advanced Configuration
+Connectivity:
+
+• Virtual private cloud (VPC): Select your custom Lab-VPC.
+
+• Public access: Choose Yes (Note: While your lab manual specifies "Yes" for connectivity verification, ensure your security groups are restricted).
+
+• Availability Zone: Select No preference or match the exact zone you used for your subnets.
+
+Additional Configuration (Scroll to the very bottom):
+
+• Initial database name: Type an initial database name (e.g., company_db).
+
+Click Create database.
+Confirm the RDS Database's Security Group
+Go back to your RDS Dashboard and click on your database name (db-prg6).
+Look under the Connectivity & security tab.
+Check the name under VPC security groups. (Based on your earlier screenshot image_905766.png, it is likely using a group called rds-sg-prg6 or default, not launch-wizard-1).
+Modify Your RDS Database Settings
+On the exact page you are currently viewing (your RDS Database details page), scroll up to the top and click the white Modify button.
+Scroll down until you find the Connectivity section.
+Look for VPC security groups.
+Click on the dropdown/search box, select launch-wizard-1, and then click the little X next to default to remove it. (Now only launch-wizard-1 should be selected).
+Phase 3: Launching and Configuring the EC2 Instance
+Step 1: Run the Instance Wizard
+Search for and select EC2 from the AWS Console.
+Click Instances on the left menu -->Launch instances.
+Name: Enter a name (e.g., Web-Server).
+Application and OS Images (AMI): Select Ubuntu (Ubuntu Server 22.04 LTS or similar).
+Instance type: Select t2.micro (Free tier eligible).
+Key pair (login): Choose an existing key pair or click Create new key pair, download the .pem file, and keep it safe.
+Step 2: Configure Network Settings
+Click Edit next to Network Settings:
+
+• VPC: Choose your Lab-VPC.
+
+• Subnet: Select your Public-Subnet.
+
+• Auto-assign public IP: Select Enable.
+
+Firewall (Security Groups):
+
+• Select Create security group.
+
+• Name it (e.g., ec2-rds-sg).
+
+• Inbound Security Group Rules:
+
+• Rule 1: Type SSH, Source type: Anywhere (0.0.0.0/0).
+
+• Rule 2: Click Add security provider rule -->Type HTTP, Source type: Anywhere (0.0.0.0/0).
+
+• Rule 3: Click Add security provider rule -->Type HTTPS, Source type: Anywhere (0.0.0.0/0).
+
+Click Launch instance.
+Step 3: Enable RDS Connectivity in Security Groups
+
+To ensure your EC2 can send traffic to your RDS instance:
+
+Go to EC2 Dashboard -->Instances -->Click your running Instance ID.
+Go to the Security tab at the bottom -->Click the Security Groups link.
+Click Edit inbound rules -->Click Add rule.
+Set Type to MYSQL/Aurora (Port 3306) and set the Source to Anywhere (0.0.0.0/0) or point it directly to your VPC CIDR. Click Save rules.
+Phase 4: Server Setup & Database Connection via Terminal
+Step 1: SSH into your EC2 Instance
+
+Open your local computer terminal (Linux/macOS) or Git Bash/Command Prompt (Windows) where your downloaded .pem key pair file is located:
+
+# Change permissions of your private key file so it's protected
+chmod 400 your-keypair-name.pem
+
+# Connect to your Ubuntu instance using its Public IP address
+ssh -i "your-keypair-name.pem" ubuntu@<your-ec2-public-ip>
+Step 2: Environment Installation
+
+Once logged into the remote EC2 terminal, execute the following commands step-by-step:
+
+# Update package repositories
+sudo apt-get update -y
+
+# Install Apache2 Web Server and PHP components
+sudo apt-get install apache2 -y
+sudo apt-get install php libapache2-mod-php php-mysql -y
+
+# Restart Apache to apply changes
+sudo systemctl restart apache2
+
+# Install MySQL Client to test database connectivity directly
+sudo apt-get install mysql-client -y
+Step 3: Test and Seed the RDS Database
+
+Connect to your RDS database instance from the EC2 terminal using your copied endpoint:
+
+mysql -h <paste-your-rds-endpoint> -u admin -p
+
+Enter the master password you set in Phase 2 when prompted.
+
+Once inside the interactive mysql> prompt, run these queries to create a mock table and insert data:
+
+-- View existing databases
+SHOW DATABASES;
+
+-- Switch to the database you initialized during setup
+USE company_db;
+
+-- Create a mock table for testing data retrieval
+CREATE TABLE employees (
+ id INT AUTO_INCREMENT PRIMARY KEY,
+ name VARCHAR(50) NOT NULL,
+ designation VARCHAR(50) NOT NULL
+);
+
+-- Insert dummy records
+INSERT INTO employees (name, designation) VALUES ('Alice Smith', 'Cloud Engineer');
+
+INSERT INTO employees (name, designation) VALUES ('Bob Jones', 'Database Administrator');
+
+-- Verify data exists
+SELECT * FROM employees;
+
+-- Exit the MySQL client interface
+exit;
+Phase 5: Writing the PHP Application Code
+
+Navigate to the web root directory to build the interface files:
+
+cd /var/www/html/
+Step 1: Create the Database Credentials Configuration File
+
+Create a clean file called db.inc.php using the nano text editor (an easier alternative to vi):
+
+sudo nano db.inc.php
+
+Paste the following PHP configurations, replacing the placeholders with your precise setup variables:
+
+<?php
+define('DB_SERVER', 'your-rds-endpoint-here.amazonaws.com');
+define('DB_USERNAME', 'admin');
+define('DB_PASSWORD', 'your_actual_password_here');
+define('DB_DATABASE', 'company_db');
+?>
+
+(Press Ctrl + O then Enter to save, and Ctrl + X to exit nano)
+
+Step 2: Create the Frontend Access Webpage
+
+Create an application homepage file to render the fetched database tables neatly inside a browser layout:
+
+sudo nano index.php
+
+Paste the complete database query program structure below:
+
+<?php
+include_once("db.inc.php");
+
+// Establish connection to Amazon RDS Instance
+$connection = mysqli_connect(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_DATABASE);
+
+if (mysqli_connect_errno()) {
+ echo "Failed to connect to MySQL RDS: " . mysqli_connect_error();
+ exit();
+}
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+ <title>Cloud Lab Program 6</title>
+ <style>
+ body { font-family: Arial, sans-serif; margin: 40px; }
+ table { border-collapse: collapse; width: 50%; }
+ th, td { border: 1px solid #dddddd; text-align: left; padding: 8px; }
+ th { background-color: #f2f2f2; }
+ </style>
+</head>
+
+<body>
+ <h2>Employee Data Retrieved from AWS RDS Server</h2>
+
+ <table>
+ <tr>
+ <th>ID</th>
+ <th>Name</th>
+ <th>Designation</th>
+ </tr>
+
+ <?php
+ $query = "SELECT * FROM employees";
+ $result = mysqli_query($connection, $query);
+
+ if (mysqli_num_rows($result) > 0) {
+ while($row = mysqli_fetch_assoc($result)) {
+ echo "<tr>";
+ echo "<td>" . $row["id"] . "</td>";
+ echo "<td>" . $row["name"] . "</td>";
+ echo "<td>" . $row["designation"] . "</td>";
+ echo "</tr>";
+ }
+ } else {
+ echo "<tr><td colspan='3'>No records found</td></tr>";
+ }
+
+ mysqli_close($connection);
+ ?>
+
+ </table>
+</body>
+</html>
+
+(Press Ctrl + O then Enter to save, and Ctrl + X to exit)
+
+Step 3: Remove Default Welcome File
+
+To prevent Apache's default placeholder page from overriding your code, clear the index file:
+
+sudo rm -f index.html
+Phase 6: Executing and Verifying the Output
+Copy your EC2 instance's Public IP address from your AWS Console dashboard.
+Open a fresh browser window.
+Enter the target web URL string:
+http://<your-ec2-public-ip>
+
+Expected Result: Your browser will render an HTML table displaying the data records (Alice Smith and Bob Jones) directly queried from your Amazon RDS database server instance over your custom VPC connection.
