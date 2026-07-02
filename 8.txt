@@ -1,0 +1,285 @@
+Program 8: Demonstrate VS Code Integration with Cloud (AWS EC2)
+Aim
+To demonstrate the integration of Visual Studio Code (VS Code) with a cloud server hosted on AWS EC2 using the Remote - SSH extension.
+
+Theory
+Visual Studio Code is a lightweight, open-source code editor developed by Microsoft. It provides powerful features for modern web and cloud application development.
+
+Features of VS Code
+Cross-platform support (Windows, Linux, macOS)
+
+Integrated terminal
+
+Git source control integration
+
+Debugging tools
+
+IntelliSense (code completion)
+
+Extensions support
+
+AI-assisted coding through GitHub Copilot
+
+Using the Remote - SSH extension, VS Code can connect directly to cloud servers such as AWS EC2 instances and allow development on remote machines as if they were local systems.
+
+Step-by-Step Procedure
+Step 1: Launch the EC2 Instance
+1. Login to AWS Console
+Open AWS Management Console.
+
+Navigate to:
+
+AWS Console → EC2 → Instances
+2. Start the Instance
+Select your EC2 instance.
+
+Click Start Instance.
+
+3. Copy Public IP Address
+After the instance starts:
+
+Select the instance.
+
+Copy the Public IPv4 Address.
+
+Example:
+
+13.232.xxx.xxx
+4. Verify Security Group Rules
+Ensure SSH access is enabled.
+
+Go to:
+
+EC2 → Security Groups → Inbound Rules
+Add the following rule if not present:
+
+Type	Protocol	Port Range	Source
+SSH	TCP	22	My IP
+This allows SSH access only from your computer.
+
+Step 2: Install Remote - SSH Extension in VS Code
+1. Open VS Code
+Launch Visual Studio Code.
+
+2. Open Extensions Panel
+Press:
+
+Ctrl + Shift + X
+or
+
+View → Extensions
+3. Search Extension
+Search for:
+
+Remote - SSH
+Published by Microsoft.
+
+4. Install Extension
+Click:
+
+Install
+Purpose
+This extension enables VS Code to connect and work on remote Linux servers through SSH.
+
+Step 3: Prepare the PEM Key and Set Permissions
+AWS provides a .pem key file when the EC2 instance is created.
+
+Example:
+
+my-key.pem
+1. Move PEM File
+Move the key to a secure location.
+
+Linux/macOS:
+
+mkdir ~/.ssh
+mv my-key.pem ~/.ssh/
+2. Set Proper Permissions
+Linux/macOS/WSL
+Run:
+
+chmod 400 ~/.ssh/my-key.pem
+Explanation
+Permission 400 means:
+
+Permission	Meaning
+Read	Owner only
+Write	No
+Execute	No
+SSH requires private keys to have restricted permissions.
+
+Verify Permission
+Run:
+
+ls -l ~/.ssh/
+Output:
+
+-r-------- 1 user user 1675 my-key.pem
+Step 4: Add SSH Configuration
+Instead of typing a long SSH command every time, create an SSH configuration file.
+
+Open SSH Config File
+In VS Code
+Press:
+
+Ctrl + Shift + P
+This opens the Command Palette.
+
+Type:
+
+Remote-SSH: Open SSH Configuration File
+Select:
+
+~/.ssh/config
+Add Configuration Block
+Insert:
+
+Host my-ec2
+
+HostName <your-ec2-public-ip>
+
+User ec2-user
+
+IdentityFile ~/.ssh/my-key.pem
+Example:
+
+Host my-ec2
+
+HostName 13.232.xxx.xxx
+
+User ec2-user
+
+IdentityFile ~/.ssh/my-key.pem
+Meaning of Parameters
+Host
+Host my-ec2
+A nickname for the remote machine.
+
+You can choose any name.
+
+Examples:
+
+Host aws-server
+Host cloud-lab
+Host ec2-demo
+HostName
+HostName 13.232.xxx.xxx
+The Public IPv4 Address of the EC2 instance.
+
+User
+Depends on the operating system of the EC2 instance.
+
+Amazon Linux
+User ec2-user
+Ubuntu
+User ubuntu
+Debian
+User admin
+CentOS
+User centos
+IdentityFile
+IdentityFile ~/.ssh/my-key.pem
+Path to the PEM key file.
+
+Save File
+Press:
+
+Ctrl + S
+Step 5: Connect to EC2 via Remote - SSH
+Open Command Palette
+Press:
+
+Ctrl + Shift + P
+Select Connection Option
+Type:
+
+Remote-SSH: Connect to Host
+Click:
+
+Remote-SSH: Connect to Host
+Select Host
+Choose:
+
+my-ec2
+(or the nickname you assigned in the SSH config file)
+
+Authentication
+VS Code automatically:
+
+Uses the PEM key
+
+Establishes SSH connection
+
+Opens a remote session
+
+Remote Window Opens
+VS Code launches a new remote window connected to the EC2 instance.
+
+You will see:
+
+SSH: my-ec2
+at the bottom-left corner.
+
+This indicates a successful connection.
+
+Working Inside EC2
+Open Terminal
+Select:
+
+Terminal → New Terminal
+or
+
+Ctrl + `
+Verify Connection
+Run:
+
+hostname
+Output:
+
+ip-172-31-xx-xx
+Check Current User
+whoami
+Output:
+
+ec2-user
+or
+
+ubuntu
+Check Operating System
+cat /etc/os-release
+Create a Sample File
+touch hello.txt
+Verify:
+
+ls
+Output:
+
+hello.txt
+Create Python Program
+nano hello.py
+Enter:
+
+print("Hello from AWS EC2")
+Save and exit.
+
+Run:
+
+python3 hello.py
+Output:
+
+Hello from AWS EC2
+Expected Result
+AWS EC2 instance launched successfully.
+
+Remote - SSH extension installed in VS Code.
+
+SSH configuration file created.
+
+PEM key configured properly.
+
+VS Code connected successfully to EC2.
+
+Remote terminal accessed and commands executed on the cloud server.
+
+
+
