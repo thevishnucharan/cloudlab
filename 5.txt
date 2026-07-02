@@ -1,0 +1,431 @@
+Program 5: Create an Amazon RDS Server and Connect using MySQL Workbench. These steps expand every instruction given in your lab manual and are suitable for practical exams.
+
+Program 5
+Aim
+To create an Amazon RDS MySQL database server and connect it using MySQL Workbench.
+
+Prerequisites
+Before starting, make sure you have:
+
+AWS Account
+
+Internet connection
+
+MySQL Workbench installed on your computer
+
+AWS Console login credentials
+
+Step 1: Login to AWS Console
+Open any web browser.
+
+Go to https://aws.amazon.com
+
+Click Sign In to Console.
+
+Enter your AWS Account credentials.
+
+Click Sign In.
+
+The AWS Management Console opens.
+
+Step 2: Select AWS Region
+At the top-right corner select the AWS Region.
+
+Example:
+
+Asia Pacific (Mumbai)
+
+US East (N. Virginia)
+
+Note: Use the same region throughout the experiment.
+
+Step 3: Open Amazon RDS
+In the search bar type
+
+RDS
+Click
+
+Amazon RDS
+The RDS Dashboard opens.
+
+Step 4: Create Database
+From the left menu select
+
+Databases
+Click
+
+Create database
+Step 5: Choose Database Creation Method
+You will see two options:
+
+Easy Create
+
+Standard Create
+
+Select
+
+Standard Create
+Click Next.
+
+Step 6: Select Database Engine
+Under Engine options choose
+
+MySQL
+Step 7: Select Version
+Choose
+
+MySQL Community
+Version
+
+8.0.32
+(or latest available if 8.0.32 is unavailable)
+
+Step 8: Choose Template
+Scroll down to Templates.
+
+Select
+
+Free Tier
+This avoids unnecessary AWS charges.
+
+Step 9: DB Instance Settings
+Under
+
+DB Instance Identifier
+Enter
+
+studentdb
+or
+
+mydatabase
+Example
+
+studentdb
+Step 10: Master Username
+Enter
+
+admin
+or
+
+rootuser
+Example
+
+admin
+Step 11: Master Password
+Choose
+
+Self Managed
+Enter a password.
+
+Example
+
+Password@123
+Confirm password again.
+
+Remember this password.
+
+Step 12: Instance Configuration
+Leave default settings.
+
+Example
+
+db.t3.micro
+Step 13: Storage
+Keep default settings.
+
+Example
+
+20 GB
+No changes required.
+
+Step 14: Connectivity Settings
+Scroll to
+
+Connectivity
+Leave VPC as default.
+
+Subnet Group
+
+Default
+Public Access
+
+Select
+
+Yes
+This is important.
+
+Availability Zone
+
+No Preference
+Leave all remaining options default.
+
+Step 15: Additional Configuration
+Database Name
+
+(Optional)
+
+Example
+
+student
+Leave everything else as default.
+
+Step 16: Create Database
+Scroll to the bottom.
+
+Click
+
+Create Database
+AWS starts creating the RDS instance.
+
+This takes
+
+5–10 minutes
+Wait until the status becomes
+
+Available
+Step 17: Open Created Database
+Click on the database name.
+
+Example
+
+studentdb
+The details page opens.
+
+Step 18: Copy Endpoint
+Scroll to
+
+Connectivity & Security
+You will find
+
+Endpoint
+Example
+
+studentdb.abcd123.us-east-1.rds.amazonaws.com
+Copy this endpoint.
+
+Also note the
+
+Port
+Usually
+
+3306
+Step 19: Install MySQL Workbench
+If not already installed:
+
+Open browser.
+
+Search
+
+MySQL Workbench Download
+Download according to your OS.
+
+Install normally.
+
+Open MySQL Workbench.
+
+Step 20: Create New Connection
+Inside MySQL Workbench
+
+Click
+
++
+next to
+
+MySQL Connections
+A new connection window opens.
+
+Step 21: Fill Connection Details
+Connection Name
+
+AWS RDS
+Connection Method
+
+Standard TCP/IP
+Hostname
+
+Paste the RDS Endpoint copied earlier.
+
+Example
+
+studentdb.abcd123.us-east-1.rds.amazonaws.com
+Port
+
+3306
+Username
+
+admin
+Password
+
+Click
+
+Store in Vault
+Enter
+
+Password@123
+Click
+
+OK
+Step 22: Test Connection
+Click
+
+Test Connection
+If everything is correct
+
+You will get
+
+Successfully Made the MySQL Connection
+Click
+
+OK
+Then
+
+OK
+again.
+
+Step 23: If Connection Fails
+Sometimes AWS blocks incoming traffic.
+
+Do the following.
+
+Open Security Group
+Go back to AWS Console.
+
+Open your RDS instance.
+
+Click
+
+Connectivity & Security
+Find
+
+VPC Security Group
+Click the Security Group ID.
+
+Step 24: Edit Inbound Rules
+Click
+
+Edit Inbound Rules
+Click
+
+Add Rule
+Fill as follows:
+
+Type
+
+MySQL/Aurora
+or
+
+All Traffic
+Protocol
+
+TCP
+Port
+
+3306
+Source
+
+Anywhere IPv4
+or
+
+My IP
+Click
+
+Save Rules
+Step 25: Test Connection Again
+Go back to MySQL Workbench.
+
+Click
+
+Test Connection
+Now it should connect successfully.
+
+Step 26: Open Database Connection
+Double-click
+
+AWS RDS
+Workbench opens SQL Editor.
+
+Step 27: Create Database
+Execute
+
+CREATE DATABASE StudentDB;
+Refresh schemas.
+
+Step 28: Use Database
+USE StudentDB;
+Step 29: Create Student Table
+CREATE TABLE Student(
+    SID INT PRIMARY KEY,
+    Name VARCHAR(50),
+    Branch VARCHAR(30),
+    Marks INT
+);
+Execute the query.
+
+Step 30: Insert Records
+INSERT INTO Student
+VALUES
+(101,'Rahul','MCA',90),
+(102,'Sneha','MCA',85),
+(103,'Ajay','MCA',88);
+Execute.
+
+Step 31: View Records
+SELECT * FROM Student;
+Output
+
+SID	Name	Branch	Marks
+101	Rahul	MCA	90
+102	Sneha	MCA	85
+103	Ajay	MCA	88
+Step 32: Update Record
+UPDATE Student
+SET Marks=95
+WHERE SID=101;
+Verify
+
+SELECT * FROM Student;
+Step 33: Delete Record
+DELETE FROM Student
+WHERE SID=103;
+Verify
+
+SELECT * FROM Student;
+Step 34: Drop Table (Optional)
+DROP TABLE Student;
+Step 35: Delete RDS Instance (Recommended)
+To avoid AWS charges:
+
+Go to AWS Console → RDS → Databases.
+
+Select your RDS instance.
+
+Click Actions → Delete.
+
+Disable Create Final Snapshot (if not required).
+
+Confirm deletion by typing delete.
+
+Click Delete.
+
+Viva Questions
+What is Amazon RDS?
+
+What is MySQL Workbench?
+
+What is an RDS Endpoint?
+
+What is the default MySQL port?
+
+Why is Public Access enabled?
+
+What is a Security Group?
+
+What is a DB Instance?
+
+Difference between EC2 and RDS?
+
+Why choose Free Tier?
+
+Explain CRUD operations.
+
+This expanded procedure follows the sequence in your lab manual while including all the intermediate steps needed to successfully complete the experiment during a practical exam.
