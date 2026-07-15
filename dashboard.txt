@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>Smart Disaster Alert Dashboard</title>
+
+<style>
+
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+font-family:Arial,Helvetica,sans-serif;
+}
+
+body{
+
+background:#eef3f8;
+padding:30px;
+
+}
+
+.container{
+
+max-width:1200px;
+margin:auto;
+
+}
+
+.header{
+
+margin-bottom:25px;
+
+}
+
+.header h1{
+
+color:#c0392b;
+margin-bottom:6px;
+
+}
+
+.header p{
+
+color:#666;
+
+}
+
+.mode-banner{
+
+display:flex;
+justify-content:space-between;
+align-items:center;
+
+background:white;
+
+padding:18px;
+
+border-left:5px solid #1B4F8A;
+
+border-radius:8px;
+
+box-shadow:0 2px 6px rgba(0,0,0,.1);
+
+margin-bottom:20px;
+
+}
+
+.mode-box{
+
+display:flex;
+gap:40px;
+
+}
+
+.mode{
+
+font-size:13px;
+
+}
+
+.mode strong{
+
+display:block;
+font-size:15px;
+margin-bottom:5px;
+
+}
+
+.mode.auto strong{
+
+color:#1b7d3d;
+
+}
+
+.mode.manual strong{
+
+color:#1B4F8A;
+
+}
+
+.controls{
+
+display:flex;
+gap:15px;
+align-items:center;
+
+margin-bottom:25px;
+
+}
+
+button{
+
+background:#1B4F8A;
+
+color:white;
+
+border:none;
+
+padding:12px 28px;
+
+font-size:15px;
+
+font-weight:bold;
+
+border-radius:6px;
+
+cursor:pointer;
+
+}
+
+button:hover{
+
+background:#163b70;
+
+}
+
+button:disabled{
+
+background:#888;
+
+cursor:not-allowed;
+
+}
+
+#status{
+
+background:white;
+
+padding:12px;
+
+border-left:4px solid #1B4F8A;
+
+border-radius:4px;
+
+font-size:13px;
+
+flex:1;
+
+}
+
+.loading{
+
+border-left-color:#f39c12 !important;
+
+}
+
+.success{
+
+border-left-color:#27ae60 !important;
+
+}
+
+.error{
+
+border-left-color:#c0392b !important;
+
+}
+
+.weather-cards{
+
+display:flex;
+
+flex-wrap:wrap;
+
+gap:15px;
+
+margin-bottom:30px;
+
+}
+
+.card{
+
+background:white;
+
+padding:18px;
+
+border-radius:8px;
+
+flex:1;
+
+min-width:180px;
+
+box-shadow:0 2px 6px rgba(0,0,0,.1);
+
+border-top:5px solid #1B4F8A;
+
+}
+
+.alert-card{
+
+border-top-color:#c0392b;
+
+}
+
+.card h3{
+
+margin-bottom:10px;
+
+}
+
+.temp{
+
+font-size:32px;
+
+font-weight:bold;
+
+margin-bottom:6px;
+
+color:#1B4F8A;
+
+}
+
+.alert-card .temp{
+
+color:#c0392b;
+
+}
+
+.desc{
+
+font-size:13px;
+
+margin-bottom:5px;
+
+text-transform:capitalize;
+
+}
+
+.hum{
+
+font-size:12px;
+
+color:#666;
+
+margin-bottom:10px;
+
+}
+
+.badge{
+
+display:inline-block;
+
+padding:4px 10px;
+
+border-radius:15px;
+
+font-size:11px;
+
+font-weight:bold;
+
+}
+
+.normal{
+
+background:#dff7e5;
+
+color:#2d7c42;
+
+}
+
+.alerted{
+
+background:#fde8e8;
+
+color:#c0392b;
+
+}
+
+.section-title{
+
+display:flex;
+
+justify-content:space-between;
+
+align-items:center;
+
+margin-bottom:10px;
+
+}
+
+.section-title h2{
+
+color:#1B4F8A;
+
+font-size:18px;
+
+}
+
+.section-title span{
+
+font-size:12px;
+
+color:#888;
+
+}
+
+table{
+
+width:100%;
+
+border-collapse:collapse;
+
+background:white;
+
+box-shadow:0 2px 6px rgba(0,0,0,.1);
+
+}
+
+th{
+
+background:#1B4F8A;
+
+color:white;
+
+padding:12px;
+
+text-align:left;
+
+font-size:13px;
+
+}
+
+td{
+
+padding:12px;
+
+border-bottom:1px solid #eee;
+
+font-size:13px;
+
+}
+
+tr:hover{
+
+background:#fafafa;
+
+}
+
+.source{
+
+padding:4px 8px;
+
+border-radius:12px;
+
+font-size:11px;
+
+font-weight:bold;
+
+}
+
+.auto{
+
+background:#dff7e5;
+
+color:#2d7c42;
+
+}
+
+.manual{
+
+background:#e8ecff;
+
+color:#4a2ea8;
+
+}
+
+.no-data{
+
+text-align:center;
+
+padding:25px;
+
+color:#999;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+
+<h1>Smart Disaster Alert Dashboard</h1>
+
+<p>
+AWS Lambda • SNS • DynamoDB • API Gateway • CloudWatch
+</p>
+
+</div>
+
+<div class="mode-banner">
+
+<div class="mode-box">
+
+<div class="mode auto">
+
+<strong>⏱ Automatic Mode</strong>
+
+EventBridge checks weather every 15 minutes
+
+</div>
+
+<div class="mode manual">
+
+<strong>⚡ Manual Mode</strong>
+
+Click the button below for an instant weather check
+
+</div>
+
+</div>
+
+<div>
+
+Both modes use the same Lambda Function
+
+</div>
+
+</div>
+
+<div class="controls">
+
+<button
+id="checkBtn"
+onclick="checkWeather()">
+
+⚡ Check Weather Now
+
+</button>
+
+<div id="status">
+
+Ready.
+Automatic weather checks are running in the background.
+
+</div>
+
+</div>
+
+<div
+class="weather-cards"
+id="weatherCards">
+
+</div>
+
+<div class="section-title">
+
+<h2>Alert History</h2>
+
+<span>
+
+Auto refresh every 60 seconds
+
+</span>
+
+</div>
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>City</th>
+
+<th>Description</th>
+
+<th>Temperature</th>
+
+<th>Humidity</th>
+
+<th>Triggered At</th>
+
+<th>Source</th>
+
+</tr>
+
+</thead>
+
+<tbody id="alertBody">
+
+<tr>
+
+<td
+colspan="6"
+class="no-data">
+
+Loading...
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+<script>
+
+const BASE_URL =
+"https://naqjc0rrn2.execute-api.ap-south-1.amazonaws.com/prod";
+
+window.onload = () => {
+
+    loadAlerts();
+
+    setInterval(loadAlerts, 60000);
+
+};
+
+async function checkWeather(){
+
+    const btn=document.getElementById("checkBtn");
+
+    const status=document.getElementById("status");
+
+    const cards=document.getElementById("weatherCards");
+
+    btn.disabled=true;
+
+    btn.innerHTML="⏳ Checking...";
+
+    status.className="loading";
+
+    status.innerHTML=
+    "Checking weather...";
+
+    cards.innerHTML="";
+
+    try{
+
+        const response=await fetch(
+
+            `${BASE_URL}/check`,
+
+            {
+
+                method:"POST"
+
+            }
+
+        );
+
+        const data=await response.json();
+
+        if(data.results){
+
+            data.results.forEach(city=>{
+
+                if(city.error){
+
+                    return;
+
+                }
+
+                const div=document.createElement("div");
+
+                div.className="card";
+
+                if(city.alertTriggered){
+
+                    div.classList.add("alert-card");
+
+                }
+
+                div.innerHTML=`
+
+                    <h3>${city.city}</h3>
+
+                    <div class="temp">
+
+                        ${city.temperature}°C
+
+                    </div>
+
+                    <div class="desc">
+
+                        ${city.description}
+
+                    </div>
+
+                    <div class="hum">
+
+                        Humidity :
+                        ${city.humidity}%
+
+                    </div>
+
+                    <span class="badge
+                    ${city.alertTriggered ? "alerted" : "normal"}">
+
+                    ${city.alertTriggered ?
+
+                    "🚨 Alert Sent"
+
+                    :
+
+                    "✅ Safe"}
+
+                    </span>
+
+                `;
+
+                cards.appendChild(div);
+
+            });
+
+        }
+
+        if(data.alertsTriggered>0){
+
+            status.className="error";
+
+            status.innerHTML=
+
+            `🚨 ${data.alertsTriggered}
+            alert(s) triggered.
+            Email notification sent successfully.`;
+
+        }
+
+        else{
+
+            status.className="success";
+
+            status.innerHTML=
+
+            "✅ Weather checked successfully. No disaster detected.";
+
+        }
+
+        loadAlerts();
+
+    }
+
+    catch(error){
+
+        console.log(error);
+
+        status.className="error";
+
+        status.innerHTML=
+
+        "❌ Error while checking weather.";
+
+    }
+
+    btn.disabled=false;
+
+    btn.innerHTML="⚡ Check Weather Now";
+
+}
+async function loadAlerts(){
+
+    try{
+
+        const response=await fetch(
+
+            `${BASE_URL}/alerts`
+
+        );
+
+        const data=await response.json();
+
+        const tbody=document.getElementById("alertBody");
+
+        if(!data.length){
+
+            tbody.innerHTML=`
+
+            <tr>
+
+            <td colspan="6"
+            class="no-data">
+
+            No alerts have been generated yet.
+
+            </td>
+
+            </tr>
+
+            `;
+
+            return;
+
+        }
+
+        tbody.innerHTML="";
+
+        data.forEach(alert=>{
+
+            const row=document.createElement("tr");
+
+            const date=new Date(
+
+                Number(alert.timestamp)*1000
+
+            ).toLocaleString();
+
+            let sourceBadge="";
+
+            if(alert.triggerSource==="manual"){
+
+                sourceBadge=`
+
+                <span class="source manual">
+
+                ⚡ Manual
+
+                </span>
+
+                `;
+
+            }
+
+            else{
+
+                sourceBadge=`
+
+                <span class="source auto">
+
+                ⏱ Automatic
+
+                </span>
+
+                `;
+
+            }
+
+            row.innerHTML=`
+
+            <td>${alert.city}</td>
+
+            <td>${alert.description}</td>
+
+            <td>${alert.temperature}°C</td>
+
+            <td>${alert.humidity}%</td>
+
+            <td>${date}</td>
+
+            <td>${sourceBadge}</td>
+
+            `;
+
+            tbody.appendChild(row);
+
+        });
+
+    }
+
+    catch(error){
+
+        console.log(error);
+
+        document.getElementById("alertBody").innerHTML=`
+
+        <tr>
+
+        <td colspan="6"
+        class="no-data">
+
+        Unable to load alert history.
+
+        </td>
+
+        </tr>
+
+        `;
+
+    }
+
+}
+
+</script>
+
+</div>
+
+</body>
+
+</html>
+

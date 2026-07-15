@@ -1,0 +1,860 @@
+Step 1 — DynamoDB: Create the Alerts Table
+DynamoDB stores every triggered alert as a persistent record. This is the database of the system.
+
+1.1 Create the Alerts Table
+1.	Go to AWS Console → type DynamoDB in the search bar → click DynamoDB
+2.	Click the orange Create table button
+3.	Fill in the table settings:
+Table settings to enter
+  Table name:          Alerts       (capital A — exact spelling matters)
+  Partition key:       alertId      Type: String
+  Sort key:            timestamp    Type: Number
+  Table settings:      Customize settings
+  Capacity mode:       On-demand    (select this — it is free tier and auto-scales)
+
+4.	Leave everything else as default
+5.	Click Create table at the bottom right
+6.	Wait for the Status column to show Active (usually 30–60 seconds)
+
+1.2 Verify the Table
+7.	Click on Alerts in the tables list
+8.	Click the Items summary tab — it should show 0 items (empty, which is correct)
+9.	Click the Overview tab — confirm Partition key: alertId and Sort key: timestamp are shown
+
+ℹ  No second table needed
+Earlier versions of this project created a Subscriptions table.
+The combined architecture does not need it — SNS manages subscribers directly.
+Only one table (Alerts) is required.
+ 
+STEP 2 — AMAZON SNS
+
+Step 2 — SNS: Create Topic and Add Subscribers
+SNS (Simple Notification Service) broadcasts alerts to all subscribers simultaneously. One Lambda publish call delivers to SMS and email at the same time.
+
+2.1 Create the SNS Topic
+10.	Go to AWS Console → type SNS in the search bar → click Simple Notification Service
+11.	On the left sidebar click Topics
+12.	Click Create topic
+13.	Fill in:
+Topic settings
+  Type:     Standard   (NOT FIFO — Standard supports both SMS and Email)
+  Name:     disaster-alerts
+  Display name:  DisasterAlerts   (this appears as the SMS sender name)
+
+14.	Leave all other settings as default
+15.	Click Create topic
+16.	You are now on the topic details page — copy and save the Topic ARN shown at the top
+
+Your Topic ARN will look like this
+  arn:aws:sns:ap-south-1:273221486275:disaster-alerts
+  Save this — you will need it in Step 4 as the SNS_TOPIC_ARN environment variable
+
+2.2 Add Email Subscription (Fix for Email Alerts Not Sending)
+⚠  Why email was not working before
+The most common reason email alerts do not arrive is that the SNS subscription was never confirmed.
+AWS sends a confirmation email when you subscribe — you MUST click the link inside it.
+Until confirmed, the subscription shows as PendingConfirmation and SNS skips it silently.
+Follow steps below carefully and confirm within 48 hours (link expires).
+
+17.	On the topic page, click Create subscription
+18.	Fill in:
+Email subscription settings
+  Protocol:    Email
+  Endpoint:    your-email@gmail.com   (use the email you check regularly)
+
+19.	Click Create subscription
+20.	IMMEDIATELY open your email inbox in another tab
+21.	Look for an email from AWS Notifications with subject: AWS Notification - Subscription Confirmation
+22.	Click the Confirm subscription link inside that email
+23.	You should see a web page saying Subscription confirmed!
+24.	Go back to AWS → SNS → Topics → disaster-alerts → Subscriptions tab
+25.	Verify your email shows Status: Confirmed (NOT PendingConfirmation)
+
+⚠  If you see PendingConfirmation status
+Check your spam/junk folder for the confirmation email.
+If the email expired: delete the subscription, re-add it, and confirm immediately.
+Gmail tip: search for 'AWS Notification' in your inbox.
+
+2.3 Add SMS Subscription
+26.	Click Create subscription again
+27.	Fill in:
+SMS subscription settings
+  Protocol:    SMS
+  Endpoint:    +919876543210   (your phone number with country code — +91 for India)
+
+28.	Click Create subscription
+29.	SMS does not need email confirmation — it activates immediately
+30.	Go to Subscriptions tab — verify both subscriptions show Status: Confirmed
+
+2.4 Test SNS Before Proceeding
+Test that SNS works before connecting Lambda — this isolates whether notification issues come from SNS or Lambda.
+
+31.	On the topic page click Publish message
+32.	Fill in:
+Test message
+  Subject:      Test Alert
+  Message body: This is a test message from SNS disaster-alerts topic
+
+33.	Click Publish message
+34.	Check your phone — SMS should arrive within 30 seconds
+35.	Check your email — should arrive within 1–2 minutes
+36.	If SMS arrives but email does not — your email subscription is not confirmed (redo 2.2)
+37.	If neither arrives — verify you are in ap-south-1 region and subscriptions show Confirmed
+ 
+STEP 3 — IAM ROLE
+
+Step 3 — IAM: Create Lambda Execution Role
+Lambda needs permission to write to DynamoDB and publish to SNS. IAM roles grant these permissions securely without hardcoding any credentials in the code.
+
+3.1 Create the Role
+38.	Go to AWS Console → type IAM in the search bar → click IAM
+39.	On the left sidebar click Roles
+40.	Click Create role
+41.	Trusted entity type: AWS service
+42.	Use case: Lambda — click Lambda in the list
+43.	Click Next
+
+3.2 Attach Permissions
+44.	In the search box type: LambdaBasic → check AWSLambdaBasicExecutionRole
+45.	Clear the search box, type: DynamoDB → check AmazonDynamoDBFullAccess
+46.	Clear the search box, type: SNSFull → check AmazonSNSFullAccess
+47.	Verify all 3 policies are checked in the Permissions policies section
+48.	Click Next
+
+3.3 Name and Create
+49.	Role name: lambda-alert-role
+50.	Description: Lambda execution role for Smart Disaster Alert System
+51.	Click Create role
+52.	Search for lambda-alert-role in the roles list and click it to verify all 3 policies are attached
+ 
+STEP 4 — AWS LAMBDA (MOST IMPORTANT STEP)
+
+Step 4 — Lambda: Create and Configure the Function
+Lambda is the core of the system. The same function handles three different triggers: EventBridge scheduled runs, manual POST /check calls from the dashboard button, and GET /alerts reads for the dashboard table.
+
+4.1 Create the Function
+53.	Go to AWS Console → type Lambda in the search bar → click Lambda
+54.	Click Create function
+55.	Select Author from scratch (first option, selected by default)
+56.	Fill in:
+Function settings
+  Function name:   alert-processor
+  Runtime:         Python 3.12
+  Architecture:    x86_64  (leave default)
+
+57.	Expand Change default execution role (click the arrow)
+58.	Select Use an existing role
+59.	From the dropdown select lambda-alert-role (created in Step 3)
+60.	Click Create function
+61.	Wait for the green success banner: Function alert-processor was created
+
+4.2 Paste the Complete Lambda Code
+This is the fixed and complete code. The key fix for email not sending is the explicit threshold logic that guarantees alerts fire for testing, and the triggerSource field that tags each alert so the dashboard can show whether it was Auto or Manual.
+
+62.	Click the Code tab on the function page
+63.	Click inside the code editor → press Ctrl+A (select all) → press Delete
+64.	Paste the following complete code:
+
+import json
+import boto3
+import urllib.request
+import time
+import os
+ 
+dynamodb = boto3.resource('dynamodb')
+sns      = boto3.client('sns')
+ 
+ALERTS_TABLE  = 'Alerts'
+SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+API_KEY       = os.environ['WEATHER_API_KEY']
+CITIES        = ['Bengaluru', 'Mumbai', 'Delhi']
+ 
+# ── Alert threshold (lower this to test; real value is 42) ──────────────
+TEMP_HIGH = 30   # alert if temperature ABOVE this value in Celsius
+TEMP_LOW  = 5    # alert if temperature BELOW this value in Celsius
+ 
+ 
+def send_alert(table, city, description, temp, humidity, weather_id, source):
+    """Save to DynamoDB and publish to SNS. Called for every triggered alert."""
+    alert_id = f'{city}-{int(time.time())}'
+    ts       = int(time.time())
+ 
+    # ── Save to DynamoDB ─────────────────────────────────────────────────
+    table.put_item(Item={
+        'alertId':       alert_id,
+        'timestamp':     ts,
+        'city':          city,
+        'description':   description,
+        'temperature':   str(temp),
+        'humidity':      str(humidity),
+        'weatherCode':   weather_id,
+        'triggerSource': source,   # 'auto' or 'manual'
+    })
+    print(f'DynamoDB write OK: {alert_id}')
+ 
+    # ── Publish to SNS ───────────────────────────────────────────────────
+    message = (
+        f'DISASTER ALERT\n'
+        f'City       : {city}\n'
+        f'Condition  : {description.upper()}\n'
+        f'Temperature: {temp}C\n'
+        f'Humidity   : {humidity}%\n'
+        f'Trigger    : {source.upper()}\n'
+        f'Time       : {time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(ts))}'
+    )
+    response = sns.publish(
+        TopicArn = SNS_TOPIC_ARN,
+        Message  = message,
+        Subject  = f'Disaster Alert: {city} - {description}',
+    )
+    print(f'SNS publish OK: MessageId={response["MessageId"]}')
+    return alert_id
+ 
+ 
+def check_all_cities(source):
+    """
+    Fetch weather for every city, evaluate thresholds, send alerts.
+    source: 'auto' (EventBridge) or 'manual' (dashboard button)
+    """
+    table        = dynamodb.Table(ALERTS_TABLE)
+    alerts_sent  = []
+    results      = []
+ 
+    for city in CITIES:
+        try:
+            url = (
+                'http://api.openweathermap.org/data/2.5/weather'
+                f'?q={city}&appid={API_KEY}&units=metric'
+            )
+            print(f'Fetching weather for {city}...')
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = json.loads(resp.read())
+ 
+            weather_id  = data['weather'][0]['id']
+            description = data['weather'][0]['description']
+            temp        = data['main']['temp']
+            humidity    = data['main']['humidity']
+            print(f'{city}: {description}, {temp}C, humidity={humidity}%, code={weather_id}')
+ 
+            # ── Evaluate thresholds ──────────────────────────────────────
+            thunderstorm   = (200 <= weather_id <= 299)
+            extreme_event  = (weather_id >= 900)
+            heat_alert     = (temp > TEMP_HIGH)
+            cold_alert     = (temp < TEMP_LOW)
+            triggered      = thunderstorm or extreme_event or heat_alert or cold_alert
+ 
+            print(f'  thunderstorm={thunderstorm}, extreme={extreme_event}, '
+                  f'heat={heat_alert}, cold={cold_alert} => triggered={triggered}')
+ 
+            alert_id = None
+            if triggered:
+                alert_id = send_alert(
+                    table, city, description, temp, humidity, weather_id, source
+                )
+                alerts_sent.append(alert_id)
+ 
+            results.append({
+                'city':           city,
+                'description':    description,
+                'temperature':    temp,
+                'humidity':       humidity,
+                'weatherCode':    weather_id,
+                'alertTriggered': triggered,
+                'alertId':        alert_id,
+            })
+ 
+        except Exception as e:
+            print(f'ERROR for {city}: {e}')
+            results.append({'city': city, 'error': str(e)})
+ 
+    return {
+        'alertsTriggered': len(alerts_sent),
+        'citiesChecked':   len(results),
+        'results':         results,
+        'source':          source,
+        'checkedAt':       int(time.time()),
+    }
+ 
+ 
+def cors_headers():
+    return {
+        'Access-Control-Allow-Origin':  '*',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Content-Type':                 'application/json',
+    }
+ 
+ 
+def lambda_handler(event, context):
+    http_method = event.get('httpMethod', '')
+    path        = event.get('path', '')
+ 
+    # ── TRIGGER 1: EventBridge scheduled run ──────────────────────────
+    if event.get('source') == 'aws.events':
+        print('=== SCHEDULED RUN (EventBridge) ===')
+        summary = check_all_cities('auto')
+        print(f'Scheduled run done: {summary["alertsTriggered"]} alerts')
+        return {'statusCode': 200, 'body': json.dumps(summary)}
+ 
+    # ── TRIGGER 2: CORS preflight ─────────────────────────────────────
+    if http_method == 'OPTIONS':
+        return {'statusCode': 200, 'headers': cors_headers(), 'body': ''}
+ 
+    # ── TRIGGER 3: Manual check from dashboard button ─────────────────
+    if http_method == 'POST' and path == '/check':
+        print('=== MANUAL CHECK (Dashboard button) ===')
+        summary = check_all_cities('manual')
+        return {
+            'statusCode': 200,
+            'headers':   cors_headers(),
+            'body':      json.dumps({
+                'message':         f'Checked {summary["citiesChecked"]} cities',
+                'alertsTriggered': summary['alertsTriggered'],
+                'results':         summary['results'],
+                'checkedAt':       summary['checkedAt'],
+            }),
+        }
+ 
+    # ── TRIGGER 4: Dashboard reads alert history ──────────────────────
+    if http_method == 'GET' and path == '/alerts':
+        print('=== GET /alerts (Dashboard read) ===')
+        table  = dynamodb.Table(ALERTS_TABLE)
+        result = table.scan(Limit=50)
+        items  = sorted(
+            result['Items'],
+            key=lambda x: int(x['timestamp']),
+            reverse=True
+        )
+        return {
+            'statusCode': 200,
+            'headers':   cors_headers(),
+            'body':      json.dumps(items),
+        }
+ 
+    # ── Fallback ──────────────────────────────────────────────────────
+    print(f'Unknown trigger: method={http_method}, path={path}')
+    return {
+        'statusCode': 400,
+        'headers':   cors_headers(),
+        'body':      json.dumps({'error': 'Unknown request type'}),
+    }
+
+65.	After pasting, click the Deploy button (grey button above the code editor)
+66.	Wait for the green Successfully updated the function banner
+
+4.3 Set Environment Variables
+67.	Click the Configuration tab
+68.	Click Environment variables on the left sidebar
+69.	Click Edit
+70.	Click Add environment variable — add the first one:
+First environment variable
+  Key:    WEATHER_API_KEY
+  Value:  paste your OpenWeatherMap API key (the long alphanumeric string)
+          Example: 253dfdb67e8074916b6f44d643c93dc5
+          Get this from: openweathermap.org → My API keys
+
+71.	Click Add environment variable again — add the second one:
+Second environment variable
+  Key:    SNS_TOPIC_ARN
+  Value:  paste your SNS topic ARN copied in Step 2
+          Example: arn:aws:sns:ap-south-1:273221486275:disaster-alerts
+
+72.	Click Save — verify both variables appear in the list
+
+4.4 Set Timeout
+73.	Still in Configuration tab → click General configuration on the left sidebar
+74.	Click Edit
+75.	Find the Timeout field — change from 0 min 3 sec to 0 min 30 sec
+76.	Click Save
+
+4.5 Test the Function — Scheduled Trigger Simulation
+77.	Click the Test tab
+78.	Click Create new event
+79.	Event name: scheduleTest
+80.	Replace the entire JSON body with exactly this:
+{
+  "source": "aws.events",
+  "detail-type": "Scheduled Event",
+  "detail": {}
+}
+
+81.	Click Save then click the orange Test button
+82.	Expand the Details section in the result
+83.	Look for green Succeeded and check the response body shows city weather data
+84.	Go to CloudWatch → Log groups → /aws/lambda/alert-processor → latest log stream
+85.	You should see lines like: Bengaluru: clear sky, 28.5C, humidity=55%, code=800
+86.	You should also see: thunderstorm=False, extreme=False, heat=False (or True if temp > 30)
+
+ℹ  Why TEMP_HIGH is set to 30 in the code
+Current weather in Indian cities is typically 25–35C.
+The code sets TEMP_HIGH = 30 so alerts fire during testing when temperature exceeds 30C.
+This lets you verify the full flow — Lambda fires, DynamoDB writes, SNS sends email/SMS.
+For production use, change TEMP_HIGH = 42 (real extreme heat threshold).
+
+4.6 Test the Function — Manual Trigger Simulation
+87.	Click Create new event on the Test tab
+88.	Event name: manualTest
+89.	Replace the JSON body with:
+{
+  "httpMethod": "POST",
+  "path": "/check"
+}
+
+90.	Click Save then click Test
+91.	Verify Succeeded and results show all 3 cities
+92.	Check your phone and email — you should receive alert notifications
+
+⚠  If test succeeds but email/SMS still not received
+1. Go to SNS → Topics → disaster-alerts → Subscriptions tab
+2. Confirm Status shows Confirmed for both email and SMS (NOT PendingConfirmation)
+3. If email shows PendingConfirmation: delete it, re-add it, confirm the new email immediately
+4. Check CloudWatch logs for the line: SNS publish OK: MessageId=...
+   If this line exists, SNS received the message — the issue is the subscription
+5. Check spam folder for alert emails — Gmail sometimes filters them
+ 
+STEP 5 — AMAZON API GATEWAY
+
+Step 5 — API Gateway: Create REST API with Two Endpoints
+API Gateway gives Lambda a public HTTPS URL. You need two endpoints: GET /alerts for the dashboard to read alert history, and POST /check for the dashboard button to trigger a manual weather check.
+
+5.1 Create the API
+93.	Go to AWS Console → type API Gateway → click API Gateway
+94.	Click Create API
+95.	Under REST API (not HTTP API, not Private) click Build
+96.	Fill in:
+API settings
+  API details:    New API
+  API name:       disaster-alerts-api
+  Description:    REST API for Smart Disaster Alert System dashboard
+  API endpoint type:  Regional
+
+97.	Click Create API — you land on the Resources page
+
+5.2 Create the /alerts Resource with GET Method
+98.	In the Resources panel on the left, click the root / (the very top item)
+99.	Click Create resource (button on right side)
+100.	Fill in:
+Resource settings
+  Resource path:   /
+  Resource name:   alerts
+  CORS:            Check the box Enable API Gateway CORS
+
+101.	Click Create resource
+102.	The /alerts resource now appears in the left tree — click it to select it
+103.	Click Create method (button on right side)
+104.	Fill in:
+GET method settings
+  Method type:                  GET
+  Integration type:             Lambda function
+  Lambda proxy integration:     Toggle ON (enable this)
+  Lambda function:              ap-south-1   then select   alert-processor
+
+105.	Click Create method
+106.	A popup appears: Add Permission to Lambda Function → click OK
+
+5.3 Create the /check Resource with POST Method
+107.	In the Resources panel click the root / again (go back to root)
+108.	Click Create resource
+109.	Fill in:
+Resource settings
+  Resource path:   /
+  Resource name:   check
+  CORS:            Check the box Enable API Gateway CORS
+
+110.	Click Create resource
+111.	The /check resource appears in the left tree — click it to select it
+112.	Click Create method
+113.	Fill in:
+POST method settings
+  Method type:                  POST
+  Integration type:             Lambda function
+  Lambda proxy integration:     Toggle ON (enable this)
+  Lambda function:              ap-south-1   then select   alert-processor
+
+114.	Click Create method → click OK on the permission popup
+
+5.4 Enable CORS on /check
+115.	In the Resources panel click /check to select it
+116.	Click Enable CORS button on the right side
+117.	On the Enable CORS page:
+CORS settings to configure
+  Gateway responses:              Check Default 4XX  and  Default 5XX
+  Access-Control-Allow-Methods:   Check OPTIONS  and  POST
+  Access-Control-Allow-Headers:   leave as is (already filled)
+  Access-Control-Allow-Origin:    should show  *  (asterisk)
+  Additional settings:            leave all empty
+
+118.	Click Save
+
+5.5 Enable CORS on /alerts
+119.	In the Resources panel click /alerts to select it
+120.	Click Enable CORS button
+121.	On the Enable CORS page:
+CORS settings for /alerts
+  Gateway responses:              Check Default 4XX  and  Default 5XX
+  Access-Control-Allow-Methods:   Check OPTIONS  and  GET
+  Access-Control-Allow-Origin:    *
+
+122.	Click Save
+
+5.6 Deploy the API
+123.	Click Deploy API button (top right of the Resources page)
+124.	Fill in:
+Deploy settings
+  Stage:        *New stage*
+  Stage name:   prod
+  Description:  Production deployment
+
+125.	Click Deploy
+126.	You land on the Stage Editor page — at the top you see Invoke URL:
+Your Invoke URL looks like this — SAVE IT
+  https://6sytoaka91.execute-api.ap-south-1.amazonaws.com/prod
+
+  Your full endpoints will be:
+  GET  https://6sytoaka91.execute-api.ap-south-1.amazonaws.com/prod/alerts
+  POST https://6sytoaka91.execute-api.ap-south-1.amazonaws.com/prod/check
+
+5.7 Test the Endpoints
+Test GET /alerts:
+127.	Open a new browser tab
+128.	Paste your Invoke URL + /alerts — example: https://6sytoaka91.execute-api.ap-south-1.amazonaws.com/prod/alerts
+129.	You should see a JSON array — either [] (empty) or alert objects if the Lambda test triggered any
+130.	Missing Authentication Token means you forgot /alerts at the end — this is normal for the base URL
+
+Test POST /check via API Gateway console:
+131.	Go back to API Gateway → Resources → click POST under /check
+132.	Click the Test button (lightning bolt icon on the left panel)
+133.	Leave all fields empty → click Test
+134.	Response body should show JSON with all 3 cities and their weather data
+135.	Response status should be 200
+ 
+STEP 6 — CLOUDWATCH EVENTBRIDGE (AUTO SCHEDULER)
+
+Step 6 — CloudWatch EventBridge: Schedule Automatic Checks
+EventBridge fires the Lambda function automatically every 15 minutes. This is the automatic background monitoring mode that runs even when no one has the dashboard open.
+
+6.1 Create the Schedule
+136.	Go to AWS Console → type EventBridge in the search bar → click Amazon EventBridge
+137.	On the left sidebar look for Scheduler section → click Schedules
+138.	Click Create schedule
+
+Schedule name settings
+  Schedule name:   weather-alert-schedule
+  Description:     Triggers Lambda every 15 minutes for automatic weather monitoring
+  Schedule group:  default
+
+139.	Click Next
+
+6.2 Set the Timing
+140.	Under Schedule pattern select Recurring schedule
+141.	Select Rate-based schedule
+Rate settings
+  Rate value:   15
+  Rate unit:    Minutes
+
+142.	Flexible time window: select Off
+143.	Start date and time: leave as No start date (starts immediately)
+144.	End date and time: leave as No end date (runs forever)
+145.	Click Next
+
+6.3 Set the Target
+146.	Under Target detail, select Templated targets
+147.	Click AWS Lambda — Invoke
+148.	Lambda function dropdown: select alert-processor
+149.	Payload: leave empty (EventBridge automatically adds source: aws.events)
+150.	Click Next
+
+6.4 Set Permissions
+151.	Under Permissions select Create new role for this schedule
+152.	Leave the auto-generated role name as is
+153.	Click Next
+
+6.5 Review and Create
+154.	Review the summary — confirm: Recurring, every 15 minutes, target is alert-processor Lambda
+155.	Click Create schedule
+156.	Green success banner appears
+
+6.6 Verify the Schedule is Working
+Wait up to 15 minutes after creating the schedule, then verify:
+157.	Go to CloudWatch → Log groups → /aws/lambda/alert-processor
+158.	Click the most recent log stream
+159.	You should see: === SCHEDULED RUN (EventBridge) ===
+160.	Followed by weather data for all 3 cities
+161.	If temperature was above 30C you will also see: SNS publish OK: MessageId=...
+ 
+STEP 7 — CLOUDWATCH MONITORING DASHBOARD
+
+Step 7 — CloudWatch: Create Monitoring Dashboard
+The CloudWatch dashboard gives you a visual overview of system health — showing every Lambda invocation (both scheduled and manual), errors, and SNS notifications sent.
+
+7.1 Create the Dashboard
+162.	Go to AWS Console → type CloudWatch → click CloudWatch
+163.	On the left sidebar click Dashboards
+164.	Click Create dashboard
+165.	Dashboard name: DisasterAlertsDashboard
+166.	Click Create dashboard
+
+7.2 Add Widget 1 — Lambda Invocations and Errors
+167.	A widget picker dialog appears — select Line → click Next
+168.	Click Metrics → Lambda → By Function Name
+169.	Find alert-processor in the list
+170.	Check the box next to Invocations
+171.	Check the box next to Errors
+172.	Click Create widget
+
+7.3 Add Widget 2 — SNS Messages Sent
+173.	Click Add widget → select Number → click Next
+174.	Click Metrics → SNS → By Topic
+175.	Find disaster-alerts in the list
+176.	Check NumberOfMessagesSent
+177.	Click Create widget
+
+7.4 Add Widget 3 — Live Lambda Logs
+178.	Click Add widget → select Logs table → click Next
+179.	Select log group: /aws/lambda/alert-processor
+180.	Click Create widget
+
+7.5 Add Widget 4 — API Gateway Request Count
+181.	Click Add widget → select Line → click Next
+182.	Click Metrics → ApiGateway → By Api Name
+183.	Find disaster-alerts-api
+184.	Check Count
+185.	Click Create widget
+
+186.	Click Save dashboard (top right)
+ 
+STEP 8 — AMAZON S3 (FRONTEND DASHBOARD)
+
+Step 8 — S3: Host the Frontend Dashboard
+The dashboard is a single HTML file hosted on S3 as a static website. It shows live weather cards when you click the button and displays the full alert history from DynamoDB.
+
+8.1 Create the S3 Bucket
+187.	Go to AWS Console → type S3 → click S3
+188.	Click Create bucket
+189.	Fill in:
+Bucket settings
+  Bucket name:   disaster-alert-dashboard-yourname
+                 (replace yourname with your actual name — must be globally unique)
+                 Example: disaster-alert-dashboard-spanduroopsvishnu
+  AWS Region:    ap-south-1  (Asia Pacific Mumbai)
+
+190.	Under Object Ownership — select ACLs enabled
+191.	Under ACLs enabled, select Bucket owner preferred
+192.	Under Block Public Access settings — UNCHECK Block all public access
+193.	A warning appears — check the acknowledgment checkbox
+194.	Leave all other settings as default
+195.	Click Create bucket
+
+8.2 Enable Static Website Hosting
+196.	Click on your bucket name in the list
+197.	Click the Properties tab
+198.	Scroll to the very bottom — find Static website hosting
+199.	Click Edit
+200.	Select Enable
+201.	Hosting type: Host a static website
+202.	Index document: index.html
+203.	Error document: index.html
+204.	Click Save changes
+
+205.	Stay on Properties tab — scroll back to Static website hosting at the bottom
+206.	Copy and save the Bucket website endpoint URL — example:
+Your website URL
+  http://disaster-alert-dashboard-spanduroopsvishnu.s3-website.ap-south-1.amazonaws.com
+  This is the URL you will open in a browser to see your dashboard
+
+8.3 Create the index.html File
+Create a file called index.html on your computer. Replace YOUR_INVOKE_URL with your actual API Gateway Invoke URL from Step 5.6.
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Disaster Alert Dashboard</title>
+  <meta charset='UTF-8'>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:Arial,sans-serif; background:#f0f4f8; padding:24px; }
+    .header { margin-bottom:16px; }
+    .header h1 { color:#c0392b; font-size:22px; }
+    .header p  { color:#666; font-size:12px; margin-top:4px; }
+    .mode-bar {
+      background:white; border-radius:8px; padding:12px 18px;
+      margin-bottom:16px; border-left:5px solid #1B4F8A;
+      box-shadow:0 1px 3px rgba(0,0,0,.08);
+      display:flex; justify-content:space-between; align-items:center; }
+    .mode { font-size:12px; color:#444; }
+    .mode strong { display:block; font-size:13px; color:#1B4F8A; }
+    .mode.auto strong { color:#1a6b3a; }
+    .controls { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+    #checkBtn {
+      background:#1B4F8A; color:white; border:none;
+      padding:10px 22px; font-size:13px; font-weight:bold;
+      border-radius:6px; cursor:pointer; }
+    #checkBtn:hover { background:#154070; }
+    #checkBtn:disabled { background:#aaa; cursor:not-allowed; }
+    #status {
+      font-size:12px; padding:7px 13px; border-radius:4px;
+      background:white; border-left:4px solid #1B4F8A; color:#444; }
+    #status.ok  { border-left-color:#1a6b3a; color:#1a6b3a; }
+    #status.err { border-left-color:#c0392b; color:#c0392b; }
+    #status.loading { border-left-color:#e67e22; color:#e67e22; }
+    .cards { display:flex; gap:12px; margin-bottom:22px; flex-wrap:wrap; }
+    .card {
+      background:white; border-radius:8px; padding:14px;
+      flex:1; min-width:140px; border-top:4px solid #1B4F8A;
+      box-shadow:0 1px 3px rgba(0,0,0,.07); }
+    .card.alerted { border-top-color:#c0392b; }
+    .card h3 { font-size:13px; color:#333; margin-bottom:5px; }
+    .card .tmp { font-size:28px; font-weight:bold; color:#1B4F8A; }
+    .card.alerted .tmp { color:#c0392b; }
+    .card .dsc { font-size:11px; color:#777; margin-top:2px; text-transform:capitalize; }
+    .card .hum { font-size:11px; color:#999; margin-top:2px; }
+    .badge { display:inline-block; margin-top:7px; padding:2px 9px;
+             border-radius:10px; font-size:10px; font-weight:bold; }
+    .badge.ok  { background:#e8f5ed; color:#1a6b3a; }
+    .badge.bad { background:#fdecea; color:#c0392b; }
+    .sec-title {
+      font-size:14px; font-weight:bold; color:#1B4F8A;
+      margin-bottom:8px; display:flex; justify-content:space-between; }
+    .sec-title span { font-size:11px; color:#999; font-weight:normal; }
+    table { width:100%; border-collapse:collapse; background:white;
+            border-radius:8px; overflow:hidden;
+            box-shadow:0 1px 3px rgba(0,0,0,.07); }
+    th { background:#1B4F8A; color:white; padding:8px 12px;
+         text-align:left; font-size:11px; }
+    td { padding:8px 12px; border-bottom:1px solid #eee; font-size:11px; color:#333; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:#f9f9f9; }
+    .src { display:inline-block; padding:2px 7px; border-radius:9px;
+           font-size:10px; font-weight:bold; }
+    .src.auto   { background:#e8f5ed; color:#1a6b3a; }
+    .src.manual { background:#f0ebf8; color:#4A235A; }
+    .empty { text-align:center; color:#bbb; padding:24px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class='header'>
+    <h1>Smart Disaster Alert Dashboard</h1>
+    <p>Cloud Computing Project — Lambda + SNS + DynamoDB + API Gateway + CloudWatch</p>
+  </div>
+ 
+  <div class='mode-bar'>
+    <div style='display:flex;gap:32px'>
+      <div class='mode auto'>
+        <strong>Auto Mode</strong>
+        CloudWatch EventBridge every 15 minutes
+      </div>
+      <div class='mode'>
+        <strong>Manual Mode</strong>
+        Click Check Now button below
+      </div>
+    </div>
+    <div style='font-size:11px;color:#999'>Same Lambda handles both</div>
+  </div>
+ 
+  <div class='controls'>
+    <button id='checkBtn' onclick='checkNow()'>Check Weather Now</button>
+    <div id='status'>Ready. Auto checks run every 15 min in background.</div>
+  </div>
+ 
+  <div class='cards' id='cards'></div>
+ 
+  <div class='sec-title'>
+    Alert History
+    <span>Auto-refreshes every 60 seconds</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>City</th><th>Condition</th><th>Temp</th>
+        <th>Humidity</th><th>Time</th><th>Source</th>
+      </tr>
+    </thead>
+    <tbody id='tbody'>
+      <tr><td colspan='6' class='empty'>Loading...</td></tr>
+    </tbody>
+  </table>
+ 
+  <script>
+    // REPLACE THIS WITH YOUR API GATEWAY INVOKE URL
+    const BASE = 'https://YOUR_INVOKE_URL/prod';
+ 
+    window.onload = () => { loadAlerts(); setInterval(loadAlerts, 60000); };
+ 
+    async function checkNow() {
+      const btn = document.getElementById('checkBtn');
+      const st  = document.getElementById('status');
+      const cards = document.getElementById('cards');
+      btn.disabled = true; btn.textContent = 'Checking...';
+      st.className = 'loading';
+      st.textContent = 'Lambda running... fetching weather for all cities...';
+      cards.innerHTML = '';
+      try {
+        const res  = await fetch(`${BASE}/check`, {method:'POST'});
+        const data = await res.json();
+        (data.results||[]).forEach(r => {
+          if (r.error) return;
+          const d = document.createElement('div');
+          d.className = 'card' + (r.alertTriggered?' alerted':'');
+          d.innerHTML = `<h3>${r.city}</h3>
+            <div class='tmp'>${r.temperature}C</div>
+            <div class='dsc'>${r.description}</div>
+            <div class='hum'>Humidity: ${r.humidity}%</div>
+            <span class='badge ${r.alertTriggered?'bad':'ok'}'>
+              ${r.alertTriggered?'ALERT SENT':'Normal'}</span>`;
+          cards.appendChild(d);
+        });
+        const n = data.alertsTriggered||0;
+        st.className = n>0?'err':'ok';
+        st.textContent = n>0
+          ? `${n} alert(s) triggered - SMS and email sent`
+          : 'All cities checked - no dangerous conditions';
+        await loadAlerts();
+      } catch(e) {
+        st.className='err'; st.textContent='Error: '+e.message;
+      }
+      btn.disabled=false; btn.textContent='Check Weather Now';
+    }
+ 
+    async function loadAlerts() {
+      try {
+        const res  = await fetch(`${BASE}/alerts`);
+        const data = await res.json();
+        const tb   = document.getElementById('tbody');
+        if (!data.length) {
+          tb.innerHTML = '<tr><td colspan=6 class=empty>No alerts yet</td></tr>';
+          return;
+        }
+        tb.innerHTML = data.map(a => `<tr>
+          <td><strong>${a.city}</strong></td>
+          <td>${a.description}</td>
+          <td>${a.temperature}C</td>
+          <td>${a.humidity||'-'}%</td>
+          <td>${new Date(a.timestamp*1000).toLocaleString()}</td>
+          <td><span class='src ${a.triggerSource||'auto'}'>
+            ${a.triggerSource==='manual'?'Manual':'Auto'}</span></td>
+        </tr>`).join('');
+      } catch(e) { console.error(e); }
+    }
+  </script>
+</body>
+</html>
+
+8.4 Upload and Publish the File
+207.	Save the file as index.html on your computer
+208.	Before saving, replace YOUR_INVOKE_URL with your actual API Gateway URL from Step 5.6
+209.	Example: change https://YOUR_INVOKE_URL/prod to https://6sytoaka91.execute-api.ap-south-1.amazonaws.com/prod
+
+210.	Go to S3 → your bucket → Objects tab
+211.	If an old index.html exists: check the box next to it → Delete → Permanently delete → confirm
+212.	Click Upload → Add files → select your new index.html → Upload
+213.	After upload completes, check the box next to index.html
+214.	Click Actions dropdown → Make public using ACL
+215.	Click Make public on the confirmation page
+
+8.5 Open the Dashboard
+216.	Go to Properties tab → scroll to Static website hosting
+217.	Click the Bucket website endpoint URL
+218.	Your dashboard opens — you should see the mode banner and Check Weather Now button
+219.	Click Check Weather Now — after 3–5 seconds, weather cards appear for all 3 cities
+220.	If ALERT SENT shows on any card, check your phone and email within 60 seconds
+ 

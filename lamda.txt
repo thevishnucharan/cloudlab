@@ -1,0 +1,442 @@
+import json
+import boto3
+import urllib.request
+import urllib.error
+import urllib.parse
+import os
+import time
+
+from decimal import Decimal
+
+# ---------------------------------------------------
+# AWS Clients
+# ---------------------------------------------------
+
+dynamodb = boto3.resource("dynamodb")
+sns = boto3.client("sns")
+
+# ---------------------------------------------------
+# Environment Variables
+# ---------------------------------------------------
+
+TABLE_NAME = "Alerts"
+
+SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
+
+API_KEY = os.environ["WEATHER_API_KEY"]
+
+table = dynamodb.Table(TABLE_NAME)
+
+# ---------------------------------------------------
+# Cities to Monitor
+# ---------------------------------------------------
+
+CITIES = [
+    "Bengaluru",
+    "Mumbai",
+    "Delhi"
+]
+
+# ---------------------------------------------------
+# CORS Headers
+# ---------------------------------------------------
+
+HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Content-Type": "application/json"
+}
+
+# ---------------------------------------------------
+# Decimal Converter
+# Required for DynamoDB -> JSON conversion
+# ---------------------------------------------------
+
+def decimal_default(obj):
+
+    if isinstance(obj, Decimal):
+
+        if obj % 1 == 0:
+            return int(obj)
+
+        return float(obj)
+
+    raise TypeError
+def check_weather(trigger_source):
+
+    alerts_sent = []
+
+    results = []
+
+    print("=" * 60)
+    print(f"Trigger Source : {trigger_source}")
+    print("=" * 60)
+
+    for city in CITIES:
+
+        try:
+
+            url = (
+                "https://api.openweathermap.org/data/2.5/weather?"
+                f"q={urllib.parse.quote(city)}"
+                f"&appid={API_KEY}"
+                "&units=metric"
+            )
+
+            print(f"Checking weather for {city}")
+
+            with urllib.request.urlopen(url, timeout=15) as response:
+
+                data = json.loads(
+                    response.read().decode("utf-8")
+                )
+
+            weather_id = data["weather"][0]["id"]
+
+            description = data["weather"][0]["description"]
+
+            temperature = float(
+                data["main"]["temp"]
+            )
+
+            humidity = int(
+                data["main"]["humidity"]
+            )
+
+            city_result = {
+
+                "city": city,
+
+                "description": description,
+
+                "temperature": temperature,
+
+                "humidity": humidity,
+
+                "weatherCode": weather_id,
+
+                "alertTriggered": False
+
+            }
+
+            print(
+                f"{city} | "
+                f"{description} | "
+                f"{temperature}°C | "
+                f"Humidity {humidity}%"
+            )
+
+            disaster = (
+
+                weather_id < 300
+
+                or weather_id >= 900
+
+                or temperature > 42
+
+                or temperature < 5
+
+            )
+
+            # For demonstration you can temporarily use:
+            #
+            # or temperature > 25
+            #
+
+            if disaster:
+
+                print(f"Disaster detected in {city}")
+
+                alert_id = f"{city}-{int(time.time())}"
+
+                message = (
+                    "🚨 SMART DISASTER ALERT 🚨\n\n"
+                    f"City : {city}\n"
+                    f"Condition : {description.upper()}\n"
+                    f"Temperature : {temperature}°C\n"
+                    f"Humidity : {humidity}%\n\n"
+                    "Please take necessary precautions."
+                )
+
+                table.put_item(
+
+                    Item={
+
+                        "alertId": alert_id,
+
+                        "timestamp": int(time.time()),
+
+                        "city": city,
+
+                        "description": description,
+
+                        "temperature": str(temperature),
+
+                        "humidity": str(humidity),
+
+                        "weatherCode": weather_id,
+
+                        "triggerSource": trigger_source
+
+                    }
+
+                )
+
+                print("Alert saved into DynamoDB")
+
+                try:
+
+                    response = sns.publish(
+
+                        TopicArn=SNS_TOPIC_ARN,
+
+                        Subject=f"Disaster Alert - {city}",
+
+                        Message=message
+
+                    )
+
+                    print("SNS Publish Successful")
+
+                    print(
+                        "MessageId:",
+                        response["MessageId"]
+                    )
+
+                    alerts_sent.append(alert_id)
+
+                    city_result["alertTriggered"] = True
+
+                except Exception as sns_error:
+
+                    print("SNS ERROR")
+
+                    print(str(sns_error))
+
+            else:
+
+                print(f"No disaster detected in {city}")
+
+            results.append(city_result)
+        except urllib.error.HTTPError as http_error:
+
+            print(f"HTTP Error while checking {city}")
+
+            print(str(http_error))
+
+            results.append({
+
+                "city": city,
+
+                "error": str(http_error)
+
+            })
+
+        except urllib.error.URLError as url_error:
+
+            print(f"URL Error while checking {city}")
+
+            print(str(url_error))
+
+            results.append({
+
+                "city": city,
+
+                "error": str(url_error)
+
+            })
+
+        except Exception as e:
+
+            print(f"Unexpected Error while checking {city}")
+
+            print(str(e))
+
+            results.append({
+
+                "city": city,
+
+                "error": str(e)
+
+            })
+
+    summary = {
+
+        "citiesChecked": len(CITIES),
+
+        "alertsTriggered": len(alerts_sent),
+
+        "checkedAt": int(time.time()),
+
+        "results": results
+
+    }
+
+    print("=" * 60)
+
+    print("Weather Check Summary")
+
+    print(json.dumps(summary, indent=4))
+
+    print("=" * 60)
+
+    return summary
+def lambda_handler(event, context):
+
+    print("=" * 60)
+    print("Incoming Event")
+    print(json.dumps(event))
+    print("=" * 60)
+
+    http_method = event.get("httpMethod", "")
+    path = event.get("path", "")
+
+    # ------------------------------------------
+    # EventBridge Automatic Trigger
+    # ------------------------------------------
+
+    if event.get("source") == "aws.events":
+
+        print("Automatic EventBridge Trigger")
+
+        summary = check_weather("automatic")
+
+        return {
+            "statusCode": 200,
+            "headers": HEADERS,
+            "body": json.dumps(summary)
+        }
+
+    # ------------------------------------------
+    # Dashboard Manual Trigger
+    # POST /check
+    # ------------------------------------------
+
+    elif http_method == "POST" and path.endswith("/check"):
+
+        print("Manual Dashboard Trigger")
+
+        summary = check_weather("manual")
+
+        return {
+
+            "statusCode": 200,
+
+            "headers": HEADERS,
+
+            "body": json.dumps({
+
+                "message": "Weather checked successfully.",
+
+                "citiesChecked": summary["citiesChecked"],
+
+                "alertsTriggered": summary["alertsTriggered"],
+
+                "checkedAt": summary["checkedAt"],
+
+                "results": summary["results"]
+
+            })
+
+        }
+
+    # ------------------------------------------
+    # Dashboard Alert History
+    # GET /alerts
+    # ------------------------------------------
+
+    elif http_method == "GET" and path.endswith("/alerts"):
+
+        print("Loading Alert History")
+
+        try:
+
+            response = table.scan()
+
+            items = response.get("Items", [])
+
+            items = sorted(
+
+                items,
+
+                key=lambda x: int(x["timestamp"]),
+
+                reverse=True
+
+            )
+
+            return {
+
+                "statusCode": 200,
+
+                "headers": HEADERS,
+
+                "body": json.dumps(
+                    items,
+                    default=decimal_default
+                )
+
+            }
+
+        except Exception as e:
+
+            print("DynamoDB Read Error")
+
+            print(str(e))
+
+            return {
+
+                "statusCode": 500,
+
+                "headers": HEADERS,
+
+                "body": json.dumps({
+
+                    "error": str(e)
+
+                })
+
+            }
+
+    # ------------------------------------------
+    # CORS Preflight
+    # ------------------------------------------
+
+    elif http_method == "OPTIONS":
+
+        return {
+
+            "statusCode": 200,
+
+            "headers": HEADERS,
+
+            "body": ""
+
+        }
+
+    # ------------------------------------------
+    # Unknown Request
+    # ------------------------------------------
+
+    else:
+
+        print("Unknown Request")
+
+        print("Method :", http_method)
+
+        print("Path :", path)
+
+        return {
+
+            "statusCode": 400,
+
+            "headers": HEADERS,
+
+            "body": json.dumps({
+
+                "error": "Unknown request"
+
+            })
+
+        }
